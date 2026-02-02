@@ -1,4 +1,7 @@
+mod backend;
+
 use std::io::Cursor;
+use std::sync::Arc;
 
 use base64::Engine;
 use image::{DynamicImage, ImageFormat};
@@ -9,7 +12,9 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+use backend::Backend;
 
 // -- Request structs for tool parameters --
 
@@ -45,32 +50,6 @@ struct TakeScreenshotWindowRequest {
     save_path: Option<String>,
 }
 
-// -- Response structs for JSON output --
-
-#[derive(Serialize)]
-struct WindowInfo {
-    id: u32,
-    title: String,
-    app_name: String,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    is_minimized: bool,
-    is_maximized: bool,
-}
-
-#[derive(Serialize)]
-struct MonitorInfo {
-    id: u32,
-    name: String,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    is_primary: bool,
-}
-
 // -- Helper functions --
 
 fn encode_png_base64(img: &DynamicImage) -> Result<String, McpError> {
@@ -86,25 +65,6 @@ fn save_image(img: &DynamicImage, path: &str) -> Result<(), McpError> {
             McpError::internal_error(format!("Failed to save image to {path}: {e}"), None)
         })?;
     Ok(())
-}
-
-fn find_monitor(monitor_id: Option<u32>) -> Result<xcap::Monitor, McpError> {
-    let monitors = xcap::Monitor::all()
-        .map_err(|e| McpError::internal_error(format!("Failed to list monitors: {e}"), None))?;
-
-    match monitor_id {
-        Some(id) => monitors
-            .into_iter()
-            .find(|m| m.id().ok() == Some(id))
-            .ok_or_else(|| {
-                McpError::invalid_params(format!("Monitor with ID {id} not found"), None)
-            }),
-        None => monitors
-            .into_iter()
-            .find(|m| m.is_primary().unwrap_or(false))
-            .or_else(|| xcap::Monitor::all().ok()?.into_iter().next())
-            .ok_or_else(|| McpError::internal_error("No monitors found", None)),
-    }
 }
 
 fn screenshot_result(
@@ -126,14 +86,25 @@ fn screenshot_result(
 
 #[derive(Clone)]
 struct ScreenshotServer {
+    backend: Arc<Backend>,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl ScreenshotServer {
-    fn new() -> Self {
+    fn new(backend: Backend) -> Self {
+        let caps = backend.capabilities();
+        let mut router = Self::tool_router();
+
+        if !caps.supports_windows {
+            router.remove_route("take_screenshot_window");
+            router.remove_route("list_windows");
+            tracing::info!("Window tools removed (not supported by {} backend)", backend.name());
+        }
+
         Self {
-            tool_router: Self::tool_router(),
+            backend: Arc::new(backend),
+            tool_router: router,
         }
     }
 
@@ -142,10 +113,7 @@ impl ScreenshotServer {
         &self,
         Parameters(req): Parameters<TakeScreenshotRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let monitor = find_monitor(req.monitor_id)?;
-        let rgba = monitor
-            .capture_image()
-            .map_err(|e| McpError::internal_error(format!("Failed to capture screen: {e}"), None))?;
+        let rgba = self.backend.capture_monitor(req.monitor_id)?;
         let img = DynamicImage::ImageRgba8(rgba);
         screenshot_result(&img, req.save_path.as_deref())
     }
@@ -155,25 +123,9 @@ impl ScreenshotServer {
         &self,
         Parameters(req): Parameters<TakeScreenshotRegionRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let monitor = find_monitor(req.monitor_id)?;
-        let rgba = monitor
-            .capture_image()
-            .map_err(|e| McpError::internal_error(format!("Failed to capture screen: {e}"), None))?;
-        let img = DynamicImage::ImageRgba8(rgba);
-
-        let (img_w, img_h) = (img.width(), img.height());
-        let crop_x = req.x.max(0) as u32;
-        let crop_y = req.y.max(0) as u32;
-        if crop_x >= img_w || crop_y >= img_h {
-            return Err(McpError::invalid_params(
-                "Region is outside screen bounds",
-                None,
-            ));
-        }
-        let crop_w = req.width.min(img_w - crop_x);
-        let crop_h = req.height.min(img_h - crop_y);
-        let cropped = img.crop_imm(crop_x, crop_y, crop_w, crop_h);
-
+        let cropped =
+            self.backend
+                .capture_region(req.monitor_id, req.x, req.y, req.width, req.height)?;
         screenshot_result(&cropped, req.save_path.as_deref())
     }
 
@@ -182,46 +134,14 @@ impl ScreenshotServer {
         &self,
         Parameters(req): Parameters<TakeScreenshotWindowRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let windows = xcap::Window::all()
-            .map_err(|e| McpError::internal_error(format!("Failed to list windows: {e}"), None))?;
-        let window = windows
-            .into_iter()
-            .find(|w| w.id().ok() == Some(req.window_id))
-            .ok_or_else(|| {
-                McpError::invalid_params(
-                    format!("Window with ID {} not found", req.window_id),
-                    None,
-                )
-            })?;
-        let rgba = window
-            .capture_image()
-            .map_err(|e| {
-                McpError::internal_error(format!("Failed to capture window: {e}"), None)
-            })?;
+        let rgba = self.backend.capture_window(req.window_id)?;
         let img = DynamicImage::ImageRgba8(rgba);
         screenshot_result(&img, req.save_path.as_deref())
     }
 
     #[tool(description = "List all visible windows with their ID, title, app name, position, size, and minimized/maximized state.")]
     async fn list_windows(&self) -> Result<CallToolResult, McpError> {
-        let windows = xcap::Window::all()
-            .map_err(|e| McpError::internal_error(format!("Failed to list windows: {e}"), None))?;
-        let infos: Vec<WindowInfo> = windows
-            .iter()
-            .filter_map(|w| {
-                Some(WindowInfo {
-                    id: w.id().ok()?,
-                    title: w.title().unwrap_or_default(),
-                    app_name: w.app_name().unwrap_or_default(),
-                    x: w.x().unwrap_or(0),
-                    y: w.y().unwrap_or(0),
-                    width: w.width().unwrap_or(0),
-                    height: w.height().unwrap_or(0),
-                    is_minimized: w.is_minimized().unwrap_or(false),
-                    is_maximized: w.is_maximized().unwrap_or(false),
-                })
-            })
-            .collect();
+        let infos = self.backend.list_windows()?;
         let json = serde_json::to_string_pretty(&infos)
             .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -229,22 +149,7 @@ impl ScreenshotServer {
 
     #[tool(description = "List all monitors with their ID, name, position, resolution, and whether they are the primary monitor.")]
     async fn list_monitors(&self) -> Result<CallToolResult, McpError> {
-        let monitors = xcap::Monitor::all()
-            .map_err(|e| McpError::internal_error(format!("Failed to list monitors: {e}"), None))?;
-        let infos: Vec<MonitorInfo> = monitors
-            .iter()
-            .filter_map(|m| {
-                Some(MonitorInfo {
-                    id: m.id().ok()?,
-                    name: m.name().ok()?.to_string(),
-                    x: m.x().unwrap_or(0),
-                    y: m.y().unwrap_or(0),
-                    width: m.width().unwrap_or(0),
-                    height: m.height().unwrap_or(0),
-                    is_primary: m.is_primary().unwrap_or(false),
-                })
-            })
-            .collect();
+        let infos = self.backend.list_monitors()?;
         let json = serde_json::to_string_pretty(&infos)
             .map_err(|e| McpError::internal_error(format!("Failed to serialize: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -273,7 +178,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     tracing::info!("Starting MCP Screenshot Server");
 
-    let service = ScreenshotServer::new().serve(stdio()).await?;
+    let backend = backend::detect()?;
+    tracing::info!("Backend: {}", backend.name());
+
+    let service = ScreenshotServer::new(backend).serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
 }
