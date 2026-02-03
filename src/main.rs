@@ -9,7 +9,7 @@ use rmcp::{
     ErrorData as McpError, ServerHandler, ServiceExt,
     handler::server::{tool::ToolRouter, wrapper::Parameters},
     model::*,
-    schemars, tool, tool_handler, tool_router,
+    schemars, serde_json, tool, tool_handler, tool_router,
     transport::stdio,
 };
 use serde::Deserialize;
