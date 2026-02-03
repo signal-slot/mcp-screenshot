@@ -203,7 +203,7 @@ fn parse_transport() -> Transport {
 
     #[cfg(not(feature = "http"))]
     if use_http {
-        eprintln!("HTTP transport requested but the 'http' feature is not enabled. Falling back to stdio.");
+        panic!("HTTP transport requested but the 'http' feature is not enabled. Rebuild with --features http.");
     }
 
     let _ = (cli_port, env_port); // suppress unused warnings when http feature is off
