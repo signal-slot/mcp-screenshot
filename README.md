@@ -62,6 +62,12 @@ cargo build --release --features desktop,kms
 
 # KMS only (no xcap)
 cargo build --release --no-default-features --features kms
+
+# With HTTP transport
+cargo build --release --features http
+
+# All features
+cargo build --release --features desktop,kms,http
 ```
 
 The binary will be at `target/release/mcp-screenshot`.
@@ -95,6 +101,33 @@ Or run as root. Without this capability, the KMS backend will fail to open with 
 **Supported pixel formats:** XRGB8888, ARGB8888, XBGR8888, ABGR8888, RGB565.
 
 **Limitation:** Framebuffers with non-linear modifiers (tiled GPU buffers) cannot be read via mmap and are rejected.
+
+## Transport
+
+By default, the server uses **stdio** transport. With the `http` feature enabled, you can switch to HTTP Streamable transport.
+
+### HTTP Transport
+
+Build with the `http` feature:
+
+```sh
+cargo build --release --features http
+```
+
+Start in HTTP mode via CLI flag or environment variable:
+
+```sh
+# CLI flag (default port 8080)
+mcp-screenshot --http
+
+# Custom port
+mcp-screenshot --http --port 3000
+
+# Environment variables
+MCP_SCREENSHOT_TRANSPORT=http MCP_SCREENSHOT_PORT=3000 mcp-screenshot
+```
+
+The server listens on `http://0.0.0.0:<port>/mcp`.
 
 ## Usage
 
@@ -137,7 +170,7 @@ claude mcp add screenshot /path/to/mcp-screenshot
 
 ## Tech Stack
 
-- [rmcp](https://crates.io/crates/rmcp) 0.13 - Official Rust MCP SDK (stdio transport)
+- [rmcp](https://crates.io/crates/rmcp) 0.13 - Official Rust MCP SDK (stdio & HTTP Streamable transport)
 - [xcap](https://crates.io/crates/xcap) 0.8 - Cross-platform screen capture
 - [drm](https://crates.io/crates/drm) 0.14 - DRM/KMS bindings (KMS backend)
 - [image](https://crates.io/crates/image) 0.25 - Image processing

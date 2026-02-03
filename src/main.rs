@@ -92,7 +92,7 @@ struct ScreenshotServer {
 
 #[tool_router]
 impl ScreenshotServer {
-    fn new(backend: Backend) -> Self {
+    fn new(backend: Arc<Backend>) -> Self {
         let caps = backend.capabilities();
         let mut router = Self::tool_router();
 
@@ -103,7 +103,7 @@ impl ScreenshotServer {
         }
 
         Self {
-            backend: Arc::new(backend),
+            backend,
             tool_router: router,
         }
     }
@@ -170,6 +170,77 @@ impl ServerHandler for ScreenshotServer {
     }
 }
 
+enum Transport {
+    Stdio,
+    #[cfg(feature = "http")]
+    Http { port: u16 },
+}
+
+fn parse_transport() -> Transport {
+    let args: Vec<String> = std::env::args().collect();
+
+    let has_http_flag = args.iter().any(|a| a == "--http");
+    let cli_port = args.windows(2).find_map(|w| {
+        if w[0] == "--port" {
+            w[1].parse::<u16>().ok()
+        } else {
+            None
+        }
+    });
+
+    let env_transport = std::env::var("MCP_SCREENSHOT_TRANSPORT").ok();
+    let env_port = std::env::var("MCP_SCREENSHOT_PORT")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok());
+
+    let use_http = has_http_flag || env_transport.as_deref() == Some("http");
+
+    #[cfg(feature = "http")]
+    if use_http {
+        let port = cli_port.or(env_port).unwrap_or(8080);
+        return Transport::Http { port };
+    }
+
+    #[cfg(not(feature = "http"))]
+    if use_http {
+        eprintln!("HTTP transport requested but the 'http' feature is not enabled. Falling back to stdio.");
+    }
+
+    let _ = (cli_port, env_port); // suppress unused warnings when http feature is off
+    Transport::Stdio
+}
+
+#[cfg(feature = "http")]
+async fn serve_http(backend: Arc<Backend>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    use rmcp::transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService,
+        session::local::LocalSessionManager,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    let ct = CancellationToken::new();
+
+    let service: StreamableHttpService<ScreenshotServer, LocalSessionManager> = StreamableHttpService::new(
+        move || Ok(ScreenshotServer::new(backend.clone())),
+        Default::default(),
+        StreamableHttpServerConfig {
+            stateful_mode: true,
+            cancellation_token: ct.child_token(),
+            ..Default::default()
+        },
+    );
+
+    let router = axum::Router::new().nest_service("/mcp", service);
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
+    tracing::info!("HTTP transport listening on 0.0.0.0:{port}/mcp");
+
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move { ct.cancelled().await })
+        .await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -178,10 +249,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     tracing::info!("Starting MCP Screenshot Server");
 
-    let backend = backend::detect()?;
+    let backend = Arc::new(backend::detect()?);
     tracing::info!("Backend: {}", backend.name());
 
-    let service = ScreenshotServer::new(backend).serve(stdio()).await?;
-    service.waiting().await?;
+    match parse_transport() {
+        Transport::Stdio => {
+            let service = ScreenshotServer::new(backend).serve(stdio()).await?;
+            service.waiting().await?;
+        }
+        #[cfg(feature = "http")]
+        Transport::Http { port } => {
+            serve_http(backend, port).await?;
+        }
+    }
+
     Ok(())
 }

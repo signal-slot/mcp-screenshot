@@ -7,6 +7,7 @@ edition = "2024"
 default = ["desktop"]
 desktop = ["dep:xcap"]
 kms = ["dep:drm", "dep:drm-fourcc", "dep:rustix"]
+http = ["rmcp/transport-streamable-http-server", "dep:axum", "dep:tokio-util", "tokio/net"]
 
 [dependencies]
 rmcp = { version = "0.13", features = ["server", "transport-io"] }
@@ -21,3 +22,5 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 drm = { version = "0.14", optional = true }
 drm-fourcc = { version = "2.2", optional = true }
 rustix = { version = "0.38", features = ["mm"], optional = true }
+axum = { version = "0.8", optional = true }
+tokio-util = { version = "0.7", optional = true }
