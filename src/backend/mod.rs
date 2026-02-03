@@ -1,11 +1,11 @@
-#[cfg(feature = "xcap-backend")]
+#[cfg(feature = "desktop")]
 mod xcap;
 #[cfg(feature = "kms")]
 mod kms;
 #[cfg(feature = "kms")]
 mod pixel_format;
 
-#[cfg(feature = "xcap-backend")]
+#[cfg(feature = "desktop")]
 pub use self::xcap::XcapBackend;
 #[cfg(feature = "kms")]
 pub use self::kms::KmsBackend;
@@ -49,7 +49,7 @@ pub struct BackendCapabilities {
 // -- Backend enum --
 
 pub enum Backend {
-    #[cfg(feature = "xcap-backend")]
+    #[cfg(feature = "desktop")]
     Xcap(XcapBackend),
     #[cfg(feature = "kms")]
     Kms(KmsBackend),
@@ -58,7 +58,7 @@ pub enum Backend {
 impl Backend {
     pub fn capabilities(&self) -> BackendCapabilities {
         match self {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             Backend::Xcap(_) => BackendCapabilities {
                 supports_windows: true,
             },
@@ -71,7 +71,7 @@ impl Backend {
 
     pub fn name(&self) -> &'static str {
         match self {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             Backend::Xcap(_) => "xcap",
             #[cfg(feature = "kms")]
             Backend::Kms(_) => "kms",
@@ -80,7 +80,7 @@ impl Backend {
 
     pub fn capture_monitor(&self, monitor_id: Option<u32>) -> Result<RgbaImage, McpError> {
         match self {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             Backend::Xcap(b) => b.capture_monitor(monitor_id),
             #[cfg(feature = "kms")]
             Backend::Kms(b) => b.capture_monitor(monitor_id),
@@ -115,7 +115,7 @@ impl Backend {
     #[allow(unused_variables)]
     pub fn capture_window(&self, window_id: u32) -> Result<RgbaImage, McpError> {
         match self {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             Backend::Xcap(b) => b.capture_window(window_id),
             #[cfg(feature = "kms")]
             Backend::Kms(_) => Err(McpError::internal_error(
@@ -127,7 +127,7 @@ impl Backend {
 
     pub fn list_windows(&self) -> Result<Vec<WindowInfo>, McpError> {
         match self {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             Backend::Xcap(b) => b.list_windows(),
             #[cfg(feature = "kms")]
             Backend::Kms(_) => Err(McpError::internal_error(
@@ -139,7 +139,7 @@ impl Backend {
 
     pub fn list_monitors(&self) -> Result<Vec<MonitorInfo>, McpError> {
         match self {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             Backend::Xcap(b) => b.list_monitors(),
             #[cfg(feature = "kms")]
             Backend::Kms(b) => b.list_monitors(),
@@ -153,7 +153,7 @@ pub fn detect() -> Result<Backend, Box<dyn std::error::Error>> {
     // 1. Check env override
     if let Ok(val) = std::env::var("MCP_SCREENSHOT_BACKEND") {
         match val.as_str() {
-            #[cfg(feature = "xcap-backend")]
+            #[cfg(feature = "desktop")]
             "xcap" => {
                 tracing::info!("Using xcap backend (env override)");
                 return Ok(Backend::Xcap(XcapBackend));
@@ -171,7 +171,7 @@ pub fn detect() -> Result<Backend, Box<dyn std::error::Error>> {
     }
 
     // 2. Auto-detect: display server present -> xcap
-    #[cfg(feature = "xcap-backend")]
+    #[cfg(feature = "desktop")]
     {
         if std::env::var_os("DISPLAY").is_some()
             || std::env::var_os("WAYLAND_DISPLAY").is_some()
@@ -196,12 +196,12 @@ pub fn detect() -> Result<Backend, Box<dyn std::error::Error>> {
     }
 
     // 4. Fallback to xcap even without display env vars
-    #[cfg(feature = "xcap-backend")]
+    #[cfg(feature = "desktop")]
     {
         tracing::info!("Falling back to xcap backend");
         return Ok(Backend::Xcap(XcapBackend));
     }
 
     #[allow(unreachable_code)]
-    Err("No usable backend found. Enable the 'xcap-backend' or 'kms' feature.".into())
+    Err("No usable backend found. Enable the 'desktop' or 'kms' feature.".into())
 }

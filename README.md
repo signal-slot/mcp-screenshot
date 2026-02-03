@@ -58,7 +58,7 @@ cargo build --release
 cargo build --release --features kms
 
 # Both backends
-cargo build --release --features xcap-backend,kms
+cargo build --release --features desktop,kms
 
 # KMS only (no xcap)
 cargo build --release --no-default-features --features kms

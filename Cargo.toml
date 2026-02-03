@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["xcap-backend"]
-xcap-backend = ["dep:xcap"]
+default = ["desktop"]
+desktop = ["dep:xcap"]
 kms = ["dep:drm", "dep:drm-fourcc", "dep:rustix"]
 
 [dependencies]
