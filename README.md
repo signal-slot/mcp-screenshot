@@ -16,19 +16,19 @@ An MCP (Model Context Protocol) server for taking screenshots, listing windows, 
 
 | Backend | Platforms | Window Support |
 |---------|-----------|:-:|
-| **xcap** (default) | X11, Wayland, macOS, Windows | Yes |
+| **desktop** (default) | X11, Wayland, macOS, Windows | Yes |
 | **kms** | Embedded Linux (DRM/KMS, no display server) | No |
 
 Backend is auto-detected at startup:
 
-1. `MCP_SCREENSHOT_BACKEND` env var override (`xcap` or `kms`)
-2. `DISPLAY` / `WAYLAND_DISPLAY` present → xcap
+1. `MCP_SCREENSHOT_BACKEND` env var override (`desktop` or `kms`)
+2. `DISPLAY` / `WAYLAND_DISPLAY` present → desktop
 3. `/dev/dri/card*` with active outputs → KMS
-4. Fallback to xcap
+4. Fallback to desktop
 
 ## Tools
 
-| Tool | Description | xcap | kms |
+| Tool | Description | desktop | kms |
 |------|-------------|:----:|:---:|
 | `take_screenshot` | Full-screen screenshot | Yes | Yes |
 | `take_screenshot_region` | Region screenshot | Yes | Yes |
@@ -51,20 +51,11 @@ On the KMS backend, window tools are removed from the MCP tool list entirely —
 ## Build
 
 ```sh
-# Default (xcap backend)
+# Default (desktop backend, stdio transport)
 cargo build --release
 
-# KMS backend
-cargo build --release --features kms
-
-# Both backends
-cargo build --release --features desktop,kms
-
-# KMS only (no xcap)
-cargo build --release --no-default-features --features kms
-
-# With HTTP transport
-cargo build --release --features http
+# HTTP + KMS (headless server)
+cargo build --release --no-default-features --features http,kms
 
 # All features
 cargo build --release --features desktop,kms,http
@@ -74,7 +65,7 @@ The binary will be at `target/release/mcp-screenshot`.
 
 ### Linux Build Dependencies
 
-#### xcap backend
+#### desktop backend
 
 ```sh
 # Debian/Ubuntu
@@ -104,15 +95,9 @@ Or run as root. Without this capability, the KMS backend will fail to open with 
 
 ## Transport
 
-By default, the server uses **stdio** transport. With the `http` feature enabled, you can switch to HTTP Streamable transport.
+By default, the server uses **stdio** transport. With the `http` feature enabled, you can switch to **HTTP Streamable** transport — ideal for headless servers running the KMS backend.
 
 ### HTTP Transport
-
-Build with the `http` feature:
-
-```sh
-cargo build --release --features http
-```
 
 Start in HTTP mode via CLI flag or environment variable:
 
@@ -131,7 +116,7 @@ The server listens on `http://0.0.0.0:<port>/mcp`.
 
 ## Usage
 
-### Claude Desktop
+### Claude Desktop (stdio)
 
 Add to `claude_desktop_config.json`:
 
@@ -145,27 +130,30 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-To force a specific backend:
+### Claude Desktop (HTTP)
+
+Start the server, then add to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "screenshot": {
-      "command": "/path/to/mcp-screenshot",
-      "env": {
-        "MCP_SCREENSHOT_BACKEND": "kms"
-      }
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
 ```
 
-### Claude Code
-
-Add to Claude Code MCP settings:
+### Claude Code (stdio)
 
 ```sh
 claude mcp add screenshot /path/to/mcp-screenshot
+```
+
+### Claude Code (HTTP)
+
+```sh
+claude mcp add --transport http screenshot http://localhost:8080/mcp
 ```
 
 ## Tech Stack

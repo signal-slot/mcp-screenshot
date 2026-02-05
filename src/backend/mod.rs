@@ -154,8 +154,8 @@ pub fn detect() -> Result<Backend, Box<dyn std::error::Error>> {
     if let Ok(val) = std::env::var("MCP_SCREENSHOT_BACKEND") {
         match val.as_str() {
             #[cfg(feature = "desktop")]
-            "xcap" => {
-                tracing::info!("Using xcap backend (env override)");
+            "desktop" => {
+                tracing::info!("Using desktop backend (env override)");
                 return Ok(Backend::Xcap(XcapBackend));
             }
             #[cfg(feature = "kms")]
