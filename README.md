@@ -48,6 +48,16 @@ On the KMS backend, window tools are removed from the MCP tool list entirely —
 | `list_windows` | (none) |
 | `list_monitors` | (none) |
 
+## Install
+
+```sh
+# Default (desktop backend, stdio transport)
+cargo install mcp-screenshot
+
+# HTTP + KMS (headless server)
+cargo install mcp-screenshot --no-default-features --features http,kms
+```
+
 ## Build
 
 ```sh
