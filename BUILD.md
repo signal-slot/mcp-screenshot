@@ -19,7 +19,7 @@ The binary will be at `target/release/mcp-screenshot`.
 
 ```sh
 # Debian/Ubuntu
-apt install libxcb-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libgbm-dev
+apt install libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libgbm-dev
 
 # Gentoo
 emerge -a x11-libs/libxcb x11-libs/libXrandr sys-apps/dbus media-video/pipewire dev-libs/wayland x11-libs/gbm
