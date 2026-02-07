@@ -114,12 +114,14 @@ Start the server, then add to `claude_desktop_config.json`:
 ### Claude Code (stdio)
 
 ```sh
-claude mcp add screenshot /path/to/mcp-screenshot
+cargo install mcp-screenshot
+claude mcp add screenshot mcp-screenshot
 ```
 
 ### Claude Code (HTTP)
 
 ```sh
+cargo install mcp-screenshot --no-default-features --features http
 claude mcp add --transport http screenshot http://localhost:8080/mcp
 ```
 
